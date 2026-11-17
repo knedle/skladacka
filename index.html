@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skladačka</title>
+<meta name="description" content="Editor bloků pro skládání koláží a plakátů z obrázků a textu.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'><rect x='1' y='1' width='8' height='8' rx='1.5' fill='%23ff6b35'/><rect x='11' y='1' width='8' height='8' rx='1.5' fill='%23ff6b35' opacity='.6'/><rect x='1' y='11' width='8' height='8' rx='1.5' fill='%23ff6b35' opacity='.6'/><rect x='11' y='11' width='8' height='8' rx='1.5' fill='%23ff6b35' opacity='.3'/></svg>">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: #0e0e0e; color: #e8e8e8;
+    font-family: Impact, 'Arial Narrow', sans-serif;
+  }
+  .app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  header {
+    height: 54px; background: #171717; border-bottom: 1px solid #222;
+    display: flex; align-items: center; padding: 0 24px; gap: 12px; flex-shrink: 0;
+  }
+  header .name { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
+  header .sub { font-size: 10px; color: #3a3a3a; letter-spacing: .14em; font-weight: 600; }
+  .main { display: flex; flex: 1; overflow: hidden; }
+  .stage {
+    flex: 1; overflow: auto; padding: 40px 40px 60px;
+    display: flex; justify-content: center; align-items: flex-start;
+  }
+  .sheet { width: 100%; max-width: 900px; background: #fff; box-shadow: 0 4px 60px rgba(0,0,0,.6); }
+  .row { display: flex; }
+  .block {
+    position: relative; overflow: hidden; cursor: pointer; user-select: none; min-width: 0;
+  }
+  .block img {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+    transform-origin: center; pointer-events: none;
+  }
+  .slot {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    padding: 14px 18px; z-index: 1; pointer-events: none;
+  }
+  .slot span { line-height: 1.2; white-space: pre-wrap; word-break: break-word; }
+  .empty {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #bbb; font-size: 12px; letter-spacing: .06em; opacity: .6;
+  }
+  .ring { position: absolute; inset: 0; pointer-events: none; z-index: 10; border: 1px solid transparent; transition: border-color .15s; }
+  .block:hover .ring { border-color: rgba(255,107,53,.5); }
+  .ring.sel { border: 2px solid #ff6b35; z-index: 20; }
+
+  aside {
+    width: 272px; background: #141414; border-left: 1px solid #1f1f1f;
+    overflow-y: auto; flex-shrink: 0; display: flex; flex-direction: column;
+  }
+  .hint {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; padding: 32px; text-align: center;
+  }
+  .hint p { margin: 0; font-size: 13px; color: #3a3a3a; line-height: 1.6; }
+  .sec { padding: 14px 16px; border-bottom: 1px solid #1c1c1c; }
+  .sec h3 {
+    margin: 0 0 11px; font-size: 10px; font-weight: 600; color: #444;
+    letter-spacing: .12em; text-transform: uppercase;
+  }
+  .plabel {
+    display: block; font-size: 10px; color: #444; letter-spacing: .08em;
+    text-transform: uppercase; margin-bottom: 5px;
+  }
+  input[type=range] { width: 100%; accent-color: #ff6b35; cursor: pointer; }
+  .thumb {
+    height: 76px; border-radius: 6px; overflow: hidden; background-size: cover;
+    background-position: center; margin-bottom: 12px; border: 1px solid #222;
+  }
+  .btn {
+    flex: 1; padding: 6px 8px; background: #1a1a1a; border: 1px solid #252525; border-radius: 5px;
+    color: #aaa; font-size: 11px; cursor: pointer; font-family: inherit; transition: all .12s;
+  }
+  .btn:hover { background: #242424; }
+  .btn.danger { background: transparent; border-color: #3d1010; color: #e53935; }
+  .btn.danger:hover { background: #2a0c0c; }
+  .btn.full { width: 100%; flex: none; }
+  .upload {
+    width: 100%; padding: 22px 12px; background: #181818; border: 1px dashed #252525; border-radius: 7px;
+    cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; transition: all .15s;
+  }
+  .upload span { font-size: 11px; color: #555; letter-spacing: .06em; font-family: inherit; transition: color .15s; }
+  .upload path { transition: stroke .15s; }
+  .upload:hover { background: #1f1f1f; border-color: #3a3a3a; }
+  .upload:hover span { color: #ff6b35; }
+  .upload:hover path { stroke: #ff6b35; }
+  .palette { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; }
+  .palette button { aspect-ratio: 1; border-radius: 5px; cursor: pointer; padding: 0; outline: none; }
+  .group { display: flex; gap: 4px; }
+  .group button, .tabs button {
+    flex: 1; padding: 5px 3px; background: #1a1a1a; border: 1px solid #252525; border-radius: 5px;
+    color: #666; font-size: 10px; cursor: pointer; font-family: inherit; letter-spacing: .02em;
+    transition: all .1s; white-space: nowrap; position: relative;
+  }
+  .group button.on, .tabs button.on { background: #ff6b35; border-color: #ff6b35; color: #fff; font-weight: 600; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+  .tabs button.has { color: #bbb; }
+  .tabs button.has:not(.on)::after {
+    content: ''; position: absolute; top: 3px; right: 4px; width: 5px; height: 5px;
+    border-radius: 50%; background: #ff6b35;
+  }
+  textarea {
+    width: 100%; padding: 8px 10px; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 6px;
+    color: #e8e8e8; font-size: 13px; font-family: inherit; resize: vertical; outline: none; line-height: 1.5;
+  }
+  .stack { display: flex; flex-direction: column; gap: 10px; }
+  .dir { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; }
+  .dir button {
+    padding: 8px; background: #1a1a1a; border: 1px solid #252525; border-radius: 5px; color: #666;
+    font-size: 16px; cursor: pointer; font-family: inherit; transition: all .12s;
+    display: flex; align-items: center; justify-content: center; aspect-ratio: 1;
+  }
+  .dir button:hover { background: #ff6b35; border-color: #ff6b35; color: #fff; }
+  .dir .mid {
+    display: flex; align-items: center; justify-content: center; background: #1a1a1a;
+    border-radius: 5px; border: 1px solid #222; color: #333; font-size: 18px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <rect x="1" y="1" width="8" height="8" rx="1.5" fill="#ff6b35"/>
+      <rect x="11" y="1" width="8" height="8" rx="1.5" fill="#ff6b35" opacity="0.6"/>
+      <rect x="1" y="11" width="8" height="8" rx="1.5" fill="#ff6b35" opacity="0.6"/>
+      <rect x="11" y="11" width="8" height="8" rx="1.5" fill="#ff6b35" opacity="0.3"/>
+    </svg>
+    <span class="name">Skladačka</span>
+    <span class="sub">EDITOR BLOKŮ</span>
+  </header>
+  <div class="main">
+    <div class="stage" id="stage"><div class="sheet" id="sheet"></div></div>
+    <aside id="aside"></aside>
+  </div>
+</div>
+<input type="file" id="file" accept="image/*" hidden>
+
+<script>
+(function () {
+  const PALETTE = ['#ffffff','#f0f0f0','#9e9e9e','#212121','#fff9c4','#ffcc02','#ff7043','#e53935',
+                   '#c8e6c9','#43a047','#4dd0e1','#1e88e5','#ce93d8','#f48fb1','#8d6e63','#1b5e20'];
+  const SLOTS = [
+    { key: 'textTop',    label: '↑ Nahoru', justify: 'flex-start' },
+    { key: 'textCenter', label: '↕ Střed',  justify: 'center' },
+    { key: 'textBottom', label: '↓ Dolů',   justify: 'flex-end' },
+  ];
+  const uid = () => `b_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+  const newBlock = () => ({ id: uid(), imageUrl: null, imageScale: 1, bgColor: '#e0e0e0',
+                            textTop: null, textCenter: null, textBottom: null, aspectRatio: null });
+  const newText = () => ({ content: '', hAlign: 'center', color: 'dark' });
+  const newRow = (height = 320) => ({ id: uid(), blocks: [newBlock()], height });
+
+  let grid = [newRow()];
+  let selId = null;
+  let fontSize = 16;
+  let activeSlot = 'textCenter';
+
+  const sheet = document.getElementById('sheet');
+  const aside = document.getElementById('aside');
+  const fileInput = document.getElementById('file');
+
+  function find() {
+    if (!selId) return null;
+    for (const row of grid) {
+      const block = row.blocks.find(b => b.id === selId);
+      if (block) return { row, block };
+    }
+    return null;
+  }
+  const el = (tag, props = {}, ...kids) => {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+      if (k === 'style') n.style.cssText = v;
+      else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+      else if (k === 'html') n.innerHTML = v;
+      else n[k] = v;
+    }
+    kids.flat().forEach(c => c != null && n.append(c));
+    return n;
+  };
+
+  // ---------- plátno ----------
+  function renderCanvas() {
+    sheet.innerHTML = '';
+    grid.forEach(row => {
+      const r = el('div', { className: 'row', style: `height:${row.height}px` });
+      row.blocks.forEach(b => r.appendChild(renderBlock(b, row.height)));
+      sheet.appendChild(r);
+    });
+  }
+  function renderBlock(b, rowH) {
+    const flex = b.aspectRatio != null ? `0 0 ${b.aspectRatio * rowH}px` : '1';
+    const node = el('div', {
+      className: 'block',
+      style: `flex:${flex};background-color:${b.bgColor}`,
+      onclick: e => { e.stopPropagation(); select(selId === b.id ? null : b.id); },
+    });
+    if (b.imageUrl) node.appendChild(el('img', { src: b.imageUrl, alt: '', draggable: false, style: `transform:scale(${b.imageScale})` }));
+    let hasText = false;
+    SLOTS.forEach(s => {
+      const t = b[s.key];
+      if (!t || !t.content) return;
+      hasText = true;
+      const light = t.color === 'light';
+      node.appendChild(el('div', { className: 'slot', style: `justify-content:${s.justify};text-align:${t.hAlign}` },
+        el('span', {
+          textContent: t.content,
+          style: `font-size:${fontSize}px;color:${light ? '#ffffff' : '#111111'};text-shadow:${light ? '0 1px 4px rgba(0,0,0,0.5)' : 'none'}`,
+        })));
+    });
+    if (!b.imageUrl && !hasText) node.appendChild(el('div', { className: 'empty', textContent: 'prázdný' }));
+    node.appendChild(el('div', { className: 'ring' + (b.id === selId ? ' sel' : '') }));
+    return node;
+  }
+
+  // ---------- akce ----------
+  function select(id) {
+    if (id !== selId) activeSlot = 'textCenter';
+    selId = id;
+    render();
+  }
+  function patchBlock(id, patch) {
+    for (const row of grid) for (const b of row.blocks) if (b.id === id) Object.assign(b, patch);
+  }
+  function deleteBlock(id) {
+    grid = grid.map(r => ({ ...r, blocks: r.blocks.filter(b => b.id !== id) })).filter(r => r.blocks.length);
+    if (!grid.length) grid = [newRow()];
+    selId = null;
+    render();
+  }
+  function duplicate(id, dir) {
+    for (let ri = 0; ri < grid.length; ri++) {
+      const bi = grid[ri].blocks.findIndex(b => b.id === id);
+      if (bi === -1) continue;
+      const src = grid[ri].blocks[bi];
+      const copy = { ...src, id: uid() };
+      ['textTop', 'textCenter', 'textBottom'].forEach(k => { if (src[k]) copy[k] = { ...src[k] }; });
+      if (dir === 'right') grid[ri].blocks.splice(bi + 1, 0, copy);
+      else if (dir === 'left') grid[ri].blocks.splice(bi, 0, copy);
+      else if (dir === 'down') grid.splice(ri + 1, 0, { id: uid(), blocks: [copy], height: grid[ri].height });
+      else grid.splice(ri, 0, { id: uid(), blocks: [copy], height: grid[ri].height });
+      break;
+    }
+    render();
+  }
+  function setImage(id, file) {
+    patchBlock(id, { imageUrl: URL.createObjectURL(file), imageScale: 1 });
+    render();
+  }
+  function fitRatio(id) {
+    const b = find()?.block;
+    if (!b?.imageUrl) return;
+    const img = new Image();
+    img.onload = () => { patchBlock(id, { aspectRatio: img.naturalWidth / img.naturalHeight }); render(); };
+    img.src = b.imageUrl;
+  }
+
+  // ---------- panel vlastností ----------
+  const sec = (title, ...kids) => el('div', { className: 'sec' }, title ? el('h3', { textContent: title }) : null, ...kids);
+  const label = text => el('label', { className: 'plabel', textContent: text });
+  const btn = (text, onclick, cls = '') => el('button', { className: 'btn ' + cls, textContent: text, onclick });
+  function group(options, active, onSelect) {
+    return el('div', { className: 'group' }, options.map(o =>
+      el('button', { textContent: o.label, className: o.value === active ? 'on' : '', onclick: () => onSelect(o.value) })));
+  }
+
+  function renderInspector() {
+    aside.innerHTML = '';
+    const sel = find();
+    if (!sel) {
+      aside.appendChild(el('div', { className: 'hint', html:
+        `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" opacity="0.2">
+          <rect x="4" y="4" width="18" height="18" rx="2" stroke="#e8e8e8" stroke-width="1.5"/>
+          <rect x="26" y="4" width="18" height="18" rx="2" stroke="#e8e8e8" stroke-width="1.5"/>
+          <rect x="4" y="26" width="18" height="18" rx="2" stroke="#e8e8e8" stroke-width="1.5"/>
+          <rect x="26" y="26" width="18" height="18" rx="2" stroke="#e8e8e8" stroke-width="1.5"/>
+        </svg><p>Klikni na blok<br>pro úpravu</p>` }));
+      return;
+    }
+    const { block: b, row } = sel;
+    const wrap = el('div', { style: 'padding-bottom:32px' });
+
+    // Obrázek
+    const pick = () => fileInput.click();
+    if (b.imageUrl) {
+      wrap.appendChild(sec('Obrázek',
+        el('div', { className: 'thumb', style: `background-image:url(${b.imageUrl})` }),
+        label(`Zoom — ${Math.round(b.imageScale * 100)}%`),
+        el('input', { type: 'range', min: 0.5, max: 3, step: 0.05, value: b.imageScale, style: 'margin-bottom:10px',
+          oninput: e => {
+            patchBlock(b.id, { imageScale: +e.target.value });
+            e.target.previousSibling.textContent = `Zoom — ${Math.round(+e.target.value * 100)}%`;
+            renderCanvas();
+          } }),
+        el('div', { style: 'display:flex;gap:6px' }, btn('Přizpůsobit poměr', () => fitRatio(b.id)), btn('Vyměnit', pick)),
+        el('div', { style: 'margin-top:6px' },
+          btn('Odebrat obrázek', () => { patchBlock(b.id, { imageUrl: null, aspectRatio: null }); render(); }, 'danger full')),
+      ));
+    } else {
+      wrap.appendChild(sec('Obrázek', el('button', { className: 'upload', onclick: pick, html:
+        `<svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+          <path d="M11 3v12M6 8l5-5 5 5" stroke="#444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M3 17h16" stroke="#333" stroke-width="1.5" stroke-linecap="round"/>
+        </svg><span>Nahrát obrázek</span>` })));
+    }
+
+    // Barva pozadí
+    wrap.appendChild(sec('Barva pozadí', el('div', { className: 'palette' }, PALETTE.map(c =>
+      el('button', { title: c, style: `background-color:${c};border:${b.bgColor === c ? '2px solid #ff6b35' : `1px solid ${c === '#ffffff' ? '#ccc' : 'transparent'}`}`,
+        onclick: () => { patchBlock(b.id, { bgColor: c }); render(); } })))));
+
+    // Text
+    const cur = b[activeSlot];
+    const fsLabel = label(`Velikost písma — ${fontSize}px`);
+    const delBtn = btn('Smazat tento text', () => { patchBlock(b.id, { [activeSlot]: null }); render(); }, 'danger full');
+    delBtn.style.display = cur?.content ? '' : 'none';
+    const tabs = el('div', { className: 'tabs' }, SLOTS.map(s =>
+      el('button', { textContent: s.label,
+        className: (s.key === activeSlot ? 'on ' : '') + (b[s.key]?.content ? 'has' : ''),
+        onclick: () => { activeSlot = s.key; renderInspector(); } })));
+    const updSlot = patch => patchBlock(b.id, { [activeSlot]: { ...(b[activeSlot] ?? newText()), ...patch } });
+    wrap.appendChild(sec('Text',
+      el('div', { style: 'margin-bottom:14px' }, fsLabel,
+        el('input', { type: 'range', min: 10, max: 72, step: 1, value: fontSize,
+          oninput: e => { fontSize = +e.target.value; fsLabel.textContent = `Velikost písma — ${fontSize}px`; renderCanvas(); } })),
+      tabs,
+      el('div', { className: 'stack' },
+        el('textarea', { value: cur?.content ?? '', placeholder: 'Napište text…', rows: 4,
+          oninput: e => {
+            updSlot({ content: e.target.value });
+            const has = !!e.target.value;
+            delBtn.style.display = has ? '' : 'none';
+            tabs.children[SLOTS.findIndex(s => s.key === activeSlot)].classList.toggle('has', has);
+            renderCanvas();
+          } }),
+        el('div', {}, label('Zarovnání'), group(
+          [{ value: 'left', label: '← Vlevo' }, { value: 'center', label: '= Střed' }, { value: 'right', label: '→ Vpravo' }],
+          cur?.hAlign ?? 'center', v => { updSlot({ hAlign: v }); render(); })),
+        el('div', {}, label('Barva textu'), group(
+          [{ value: 'dark', label: '■ Tmavá' }, { value: 'light', label: '□ Světlá' }],
+          cur?.color ?? 'dark', v => { updSlot({ color: v }); render(); })),
+        delBtn,
+      )));
+
+    // Duplikace
+    const d = (arrow, title, dir) => el('button', { textContent: arrow, title, onclick: () => duplicate(b.id, dir) });
+    wrap.appendChild(sec('Duplikovat blok', el('div', { className: 'dir' },
+      el('div'), d('↑', 'Nahoru', 'up'), el('div'),
+      d('←', 'Vlevo', 'left'), el('div', { className: 'mid', textContent: '◱' }), d('→', 'Vpravo', 'right'),
+      el('div'), d('↓', 'Dolů', 'down'), el('div'))));
+
+    // Výška řádku
+    wrap.appendChild(sec('Výška řádku', group([200, 280, 360, 480].map(h => ({ value: h, label: String(h) })),
+      row.height, h => { row.height = h; render(); })));
+
+    wrap.appendChild(sec('', btn('Smazat blok', () => deleteBlock(b.id), 'danger full')));
+    aside.appendChild(wrap);
+  }
+
+  function render() { renderCanvas(); renderInspector(); }
+
+  // ---------- události ----------
+  document.getElementById('stage').addEventListener('click', e => {
+    if (e.target === e.currentTarget) select(null);
+  });
+  fileInput.addEventListener('change', e => {
+    const f = e.target.files?.[0];
+    if (f && selId) setImage(selId, f);
+    e.target.value = '';
+  });
+  window.addEventListener('paste', e => {
+    if (!selId) return;
+    const tag = e.target?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const item = Array.from(e.clipboardData?.items ?? []).find(i => i.type.startsWith('image/'));
+    const f = item?.getAsFile();
+    if (!f) return;
+    setImage(selId, f);
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
